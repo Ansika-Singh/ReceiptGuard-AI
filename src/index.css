@@ -1,0 +1,130 @@
+@import "tailwindcss";
+
+/* ─── Design tokens via Tailwind CSS v4 theme ─── */
+@theme {
+  --color-primary: #154A82;
+  --color-primary-mid: #2F6BA8;
+  --color-primary-light: #4A8BC7;
+  --color-primary-50: #EBF2FA;
+  --color-primary-100: #D0E1F2;
+
+  --color-accent: #F2A56B;
+  --color-accent-light: #F7C9A0;
+  --color-accent-50: #FEF5ED;
+
+  --color-alert-amber: #B45309;
+  --color-alert-amber-bg: #FFFBEB;
+  --color-alert-amber-border: #FDE68A;
+
+  --color-success: #059669;
+  --color-success-bg: #ECFDF5;
+  --color-success-border: #A7F3D0;
+
+  --color-danger: #DC2626;
+  --color-danger-bg: #FEF2F2;
+  --color-danger-border: #FECACA;
+
+  --color-surface: #FFFFFF;
+  --color-background: #F1F6F9;
+  --color-muted: #6B7280;
+  --color-border: #E5E7EB;
+
+  --font-family-sans: 'Inter', system-ui, -apple-system, sans-serif;
+
+  --radius-card: 12px;
+  --radius-button: 8px;
+  --radius-badge: 6px;
+
+  --shadow-card: 0 1px 3px 0 rgba(0,0,0,0.06), 0 1px 2px -1px rgba(0,0,0,0.06);
+  --shadow-card-hover: 0 4px 12px 0 rgba(0,0,0,0.08), 0 2px 4px -2px rgba(0,0,0,0.06);
+  --shadow-modal: 0 20px 60px -12px rgba(0,0,0,0.15);
+}
+
+/* ─── Base styles ─── */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: var(--font-family-sans);
+  background-color: var(--color-background);
+  color: #1F2937;
+  margin: 0;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ─── Scrollbar styling ─── */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 3px;
+}
+
+/* ─── Focus styles for accessibility ─── */
+:focus-visible {
+  outline: 2px solid var(--color-primary-mid);
+  outline-offset: 2px;
+}
+
+/* ─── Gradient utilities ─── */
+.gradient-hero {
+  background: radial-gradient(ellipse at 30% 20%, rgba(21,74,130,0.08) 0%, rgba(242,165,107,0.06) 50%, transparent 80%);
+}
+
+.gradient-header {
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-mid) 100%);
+}
+
+/* ─── Card utility ─── */
+.card {
+  background: var(--color-surface);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  transition: box-shadow 0.2s ease;
+}
+.card:hover {
+  box-shadow: var(--shadow-card-hover);
+}
+
+/* ─── Skeleton animation ─── */
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+.skeleton {
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+  background: linear-gradient(90deg, #E5E7EB 25%, #F3F4F6 50%, #E5E7EB 75%);
+  background-size: 200% 100%;
+  border-radius: var(--radius-badge);
+}
+
+/* ─── Badge utility classes ─── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: var(--radius-badge);
+  line-height: 1.5;
+}
+
+/* ─── Transition utility ─── */
+.transition-smooth {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
