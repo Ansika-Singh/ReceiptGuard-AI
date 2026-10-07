@@ -13,7 +13,7 @@ import type {
 const envApiUrl = import.meta.env.VITE_API_URL;
 export const API_ORIGIN = envApiUrl
   ? envApiUrl.replace(/\/api\/?$/, '')
-  : (import.meta.env.DEV ? 'http://localhost:8000' : '');
+  : '';
 
 export const API_BASE_URL = `${API_ORIGIN}/api`;
 

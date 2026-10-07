@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import httpx
 import re
 from typing import Dict, Any, List, Optional
@@ -27,7 +28,7 @@ def generate_grounded_answer(
 ) -> Dict[str, Any]:
     sources: List[SourceCitation] = []
     context_chunks: List[str] = []
-    q_lower = question.lower()
+    q_lower = question.lower().strip()
 
     # 1. Order Status Detection (e.g. 405-0187084-9011564, 407-5019440-7312335, SALE-2026, ORD-1001, ORD-999999)
     order_match = re.search(r"\b(\d{3}-\d{7}-\d{7}|SALE-\d{4}|ORD-\d{3,6})\b", question, re.IGNORECASE)
@@ -42,30 +43,41 @@ def generate_grounded_answer(
             order_res = perform_order_lookup(ord_id, shopper_id=shopper_id)
             if order_res["found"]:
                 ans = (
-                    f"Order **{order_res['order_id']}** is currently **{order_res['status']}**.\n"
-                    f"• Carrier: {order_res.get('carrier') or 'N/A'}\n"
-                    f"• Tracking: `{order_res.get('tracking_number') or 'N/A'}`\n"
-                    f"• Estimated Delivery: {order_res.get('estimated_delivery') or 'N/A'}"
+                    f"### 📦 Order Verification: **{order_res['order_id']}**\n\n"
+                    f"• **Current Status**: **{order_res['status']}**\n"
+                    f"• **Carrier**: {order_res.get('carrier') or 'N/A'}\n"
+                    f"• **Tracking Number**: `{order_res.get('tracking_number') or 'N/A'}`\n"
+                    f"• **Estimated Delivery**: {order_res.get('estimated_delivery') or 'N/A'}\n\n"
+                    f"_Verified directly against relational database truth (zero LLM hallucination)._"
                 )
                 sources.append(SourceCitation(
                     source_type="order_database",
                     title=f"Order {order_res['order_id']}",
-                    reference="Order Database",
+                    reference="SQLite Orders Database",
                     snippet=f"Status: {order_res['status']}, Carrier: {order_res.get('carrier')}"
                 ))
                 return {"answer": ans, "sources": sources, "grounded": True}
             else:
-                ans = f"Order ID **{ord_id}** not found in the order database. Please check the order number and try again."
+                ans = f"Order ID **{ord_id}** was not found in the verified order database. Please check the order reference number."
                 sources.append(SourceCitation(
                     source_type="order_database",
                     title=f"Order {ord_id}",
-                    reference="Order Database",
+                    reference="SQLite Orders Database",
                     snippet="Record Not Found"
                 ))
                 return {"answer": ans, "sources": sources, "grounded": True}
 
-    # 2. Identify Receipt & Line Items Context
-    receipt_items_context = []
+    # 2. Greeting & General Capability Queries
+    greetings = ["hi", "hello", "hey", "hola", "namaste", "help", "who are you", "what can you do", "what is this", "what do you do"]
+    is_greeting = any(q_lower == g or q_lower.startswith(g + " ") for g in greetings)
+
+    # 3. Retrieve Shopper's Saved Receipts and Items
+    all_shopper_receipts = db.query(Receipt).filter(
+        Receipt.shopper_id == shopper_id,
+        Receipt.status == "CONFIRMED"
+    ).all()
+
+    receipt_items_context: List[Dict[str, Any]] = []
     target_store = None
 
     if receipt_id:
@@ -77,58 +89,107 @@ def generate_grounded_answer(
             target_store = target_receipt.store
             calc_results = db.query(CalculationResult).filter(CalculationResult.receipt_id == receipt_id).all()
             for c in calc_results:
-                warr_info = f" | Warranty: {c.warranty_deadline} ({c.warranty_days_remaining} days)" if c.warranty_deadline else " | Warranty: None printed"
-                item_info = (
-                    f"Product: {c.item.name}\n"
-                    f"Store: {target_receipt.store}\n"
-                    f"Purchase Date: {c.purchase_date}\n"
-                    f"Price: ₹{c.item.price:.2f}\n"
-                    f"Return Deadline: {c.return_deadline} ({c.return_days_remaining} days remaining)\n"
-                    f"Status: {c.status_label}\n"
-                    f"Policy Rule: {c.applicable_policy_section or 'Store Policy'}{warr_info}"
-                )
-                receipt_items_context.append(item_info)
+                receipt_items_context.append({
+                    "name": c.item.name,
+                    "store": target_receipt.store,
+                    "price": c.item.price,
+                    "purchase_date": c.purchase_date,
+                    "return_deadline": c.return_deadline,
+                    "return_days_remaining": c.return_days_remaining,
+                    "status_label": c.status_label,
+                    "warranty_deadline": c.warranty_deadline,
+                    "warranty_days_remaining": c.warranty_days_remaining,
+                    "policy_rule": c.applicable_policy_section or "Store Policy",
+                    "receipt_id": target_receipt.receipt_id,
+                    "invoice_number": target_receipt.invoice_number,
+                })
                 sources.append(SourceCitation(
                     source_type="receipt_item",
                     title=f"Item: {c.item.name}",
                     reference=f"{target_receipt.store} ({c.applicable_policy_section or 'Policy'})",
                     snippet=f"Return deadline: {c.return_deadline}, {c.return_days_remaining} days remaining."
                 ))
-    else:
-        # Cross-receipt retrieval: search user's saved items matching query keywords
-        shopper_receipts = db.query(Receipt).filter(
-            Receipt.shopper_id == shopper_id,
-            Receipt.status == "CONFIRMED"
-        ).all()
-        for r in shopper_receipts:
+
+    # Cross-receipt retrieval if no specific receipt_id or items still empty
+    if not receipt_items_context:
+        # Check if query specifically targets any item keywords
+        matched_items = []
+        for r in all_shopper_receipts:
             for item in r.items:
-                # Check if item name or category relates to query
-                name_words = [w for w in item.name.lower().split() if len(w) > 3]
+                name_words = [w for w in item.name.lower().split() if len(w) > 2]
                 if any(w in q_lower for w in name_words) or item.category.lower() in q_lower or (r.store.lower() in q_lower):
                     c = db.query(CalculationResult).filter_by(item_id=item.item_id).first()
-                    target_store = r.store
                     if c:
-                        warr_info = f" | Warranty: {c.warranty_deadline} ({c.warranty_days_remaining} days)" if c.warranty_deadline else " | Warranty: None printed"
-                        item_info = (
-                            f"Product: {item.name}\n"
-                            f"Store: {r.store}\n"
-                            f"Purchase Date: {c.purchase_date}\n"
-                            f"Price: ₹{item.price:.2f}\n"
-                            f"Return Deadline: {c.return_deadline} ({c.return_days_remaining} days remaining)\n"
-                            f"Status: {c.status_label}\n"
-                            f"Policy Rule: {c.applicable_policy_section or 'Store Policy'}{warr_info}"
-                        )
-                        receipt_items_context.append(item_info)
+                        matched_items.append({
+                            "name": item.name,
+                            "store": r.store,
+                            "price": item.price,
+                            "purchase_date": c.purchase_date,
+                            "return_deadline": c.return_deadline,
+                            "return_days_remaining": c.return_days_remaining,
+                            "status_label": c.status_label,
+                            "warranty_deadline": c.warranty_deadline,
+                            "warranty_days_remaining": c.warranty_days_remaining,
+                            "policy_rule": c.applicable_policy_section or "Store Policy",
+                            "receipt_id": r.receipt_id,
+                            "invoice_number": r.invoice_number,
+                        })
+
+        if matched_items:
+            receipt_items_context = matched_items
+            for m in matched_items:
+                sources.append(SourceCitation(
+                    source_type="receipt_item",
+                    title=f"Matched Item: {m['name']}",
+                    reference=f"{m['store']} ({m['purchase_date']})",
+                    snippet=f"Return deadline: {m['return_deadline']} ({m['return_days_remaining']} days remaining)."
+                ))
+        else:
+            # Fall back to all active confirmed items for this shopper
+            for r in all_shopper_receipts:
+                for item in r.items:
+                    c = db.query(CalculationResult).filter_by(item_id=item.item_id).first()
+                    if c:
+                        receipt_items_context.append({
+                            "name": item.name,
+                            "store": r.store,
+                            "price": item.price,
+                            "purchase_date": c.purchase_date,
+                            "return_deadline": c.return_deadline,
+                            "return_days_remaining": c.return_days_remaining,
+                            "status_label": c.status_label,
+                            "warranty_deadline": c.warranty_deadline,
+                            "warranty_days_remaining": c.warranty_days_remaining,
+                            "policy_rule": c.applicable_policy_section or "Store Policy",
+                            "receipt_id": r.receipt_id,
+                            "invoice_number": r.invoice_number,
+                        })
                         sources.append(SourceCitation(
                             source_type="receipt_item",
-                            title=f"Saved Item: {item.name}",
-                            reference=f"{r.store} ({r.purchase_date})",
-                            snippet=f"Return deadline: {c.return_deadline} ({c.return_days_remaining} days remaining)."
+                            title=f"Saved Purchase: {item.name}",
+                            reference=f"{r.store} ({m['purchase_date'] if 'm' in locals() else c.purchase_date})",
+                            snippet=f"Price: ₹{item.price:.2f}, Return: {c.return_deadline}"
                         ))
 
-    # 3. Retrieve Grounded Store Policy Clauses
-    stores_to_query = [target_store] if target_store else ["Amazon.in", "Caffix - The Tech Cafe", "Mangalam Designer Pvt. Ltd."]
-    for s_name in stores_to_query:
+    # 4. Handle Greetings / Assistant Info
+    if is_greeting:
+        saved_count = len(receipt_items_context)
+        items_summary = ", ".join([f"**{it['name']}** ({it['store']})" for it in receipt_items_context[:3]])
+        ans = (
+            f"Hello! I am **Rupertrace**, your Personal Purchase Protection Agent. 🛡️\n\n"
+            f"I help you track and protect what you already bought without LLM hallucinations:\n"
+            f"• **Deterministic Return Windows**: Exact date calculations based on verified store policies.\n"
+            f"• **Hardware Warranties**: Proactive monitoring of manufacturer coverage.\n"
+            f"• **Order Database Truth**: Real-time status lookup (`ORD-1001`, `405-0187084-9011564`, etc.).\n\n"
+            f"You currently have **{saved_count} saved purchases** in your vault"
+            + (f" including {items_summary}." if items_summary else ".") +
+            f"\n\nHow can I help you today? You can ask things like *'When can I return my keyboard?'* or *'What did I buy?'*."
+        )
+        return {"answer": ans, "sources": sources[:3], "grounded": True}
+
+    # 5. Retrieve Grounded Store Policy Clauses
+    stores_to_query = [target_store] if target_store else list(set([it["store"] for it in receipt_items_context])) or ["Amazon.in", "Caffix - The Tech Cafe", "Mangalam Designer Pvt. Ltd."]
+    for s_name in stores_to_query[:3]:
         if not s_name:
             continue
         policy_chunks = chroma_service.query_policy_documents(store=s_name, query=question, n_results=2)
@@ -147,84 +208,106 @@ def generate_grounded_answer(
                 ))
 
     # Fallback to direct DB policy search if vector store returns nothing
-    if not context_chunks and target_store:
-        sections = db.query(PolicySection).join(StorePolicy).filter(StorePolicy.store.ilike(target_store)).all()
-        for sec in sections:
-            context_chunks.append(sec.full_text)
-            sources.append(SourceCitation(
-                source_type="policy",
-                title=f"Policy {sec.section_code}",
-                reference=f"{target_store} {sec.section_code}",
-                snippet=sec.full_text[:150]
-            ))
+    if not context_chunks:
+        for s_name in stores_to_query[:2]:
+            sections = db.query(PolicySection).join(StorePolicy).filter(StorePolicy.store.ilike(f"%{s_name}%")).all()
+            for sec in sections:
+                if sec.full_text not in context_chunks:
+                    context_chunks.append(sec.full_text)
+                    sources.append(SourceCitation(
+                        source_type="policy",
+                        title=f"Policy {sec.section_code}",
+                        reference=f"{s_name} {sec.section_code}",
+                        snippet=sec.full_text[:150]
+                    ))
 
-    # Assemble Full Grounded Context
+    # Assemble Full Context String for AI Provider
+    item_strings = [
+        f"Product: {it['name']}\nStore: {it['store']}\nPrice: ₹{it['price']:.2f}\nPurchase Date: {it['purchase_date']}\nReturn Deadline: {it['return_deadline']} ({it['return_days_remaining']} days remaining)\nWarranty: {it['warranty_deadline'] or 'None'} ({it['warranty_days_remaining']} days remaining)\nStatus: {it['status_label']}\nPolicy: {it['policy_rule']}"
+        for it in receipt_items_context
+    ]
     full_context_str = ""
-    if receipt_items_context:
-        full_context_str += "=== UPLOADED RECEIPT & PROTECTION DEADLINES ===\n" + "\n\n".join(receipt_items_context) + "\n\n"
+    if item_strings:
+        full_context_str += "=== UPLOADED PURCHASES & PROTECTION STATUS ===\n" + "\n\n".join(item_strings) + "\n\n"
     if context_chunks:
-        full_context_str += "=== STORE POLICY DOCUMENTS ===\n" + "\n\n".join(context_chunks) + "\n\n"
+        full_context_str += "=== STORE POLICIES ===\n" + "\n\n".join(context_chunks) + "\n\n"
 
-    # If completely empty
-    if not full_context_str:
+    # 6. Try Active External AI Provider
+    from app.services.ai_provider import ai_provider
+    if full_context_str:
+        answer_text = ai_provider.generate_completion(
+            system_prompt=SYSTEM_PROMPT,
+            context=full_context_str,
+            question=question
+        )
+        if answer_text:
+            return {
+                "answer": answer_text,
+                "sources": sources,
+                "grounded": True
+            }
+
+    # 7. Intelligent Grounded Synthesis Engine (Guaranteed zero-hallucination response)
+    if not receipt_items_context and not context_chunks:
         return {
-            "answer": "I couldn't find that information in your saved purchases or store policies. Please upload a receipt or specify an order identifier.",
+            "answer": "I couldn't find relevant purchase records or policies matching your query. Please upload a receipt or select a purchase from your vault.",
             "sources": [],
             "grounded": True
         }
 
-    # 4. Generate Answer via Active AI Provider (External API / Ollama / Fallback)
-    from app.services.ai_provider import ai_provider
-    answer_text = ai_provider.generate_completion(
-        system_prompt=SYSTEM_PROMPT,
-        context=full_context_str,
-        question=question
-    )
-    if answer_text:
-        return {
-            "answer": answer_text,
-            "sources": sources,
-            "grounded": True
-        }
+    # A. Return window / deadline / refund questions
+    if any(k in q_lower for k in ["return", "deadline", "window", "when", "days left", "expire", "refund", "exchange"]):
+        lines = ["### 📅 Return & Replacement Windows:\n"]
+        for it in receipt_items_context:
+            status_badge = f"⚠️ **{it['status_label']}**" if "EXPIRING" in it['status_label'] or it['return_days_remaining'] <= 7 else f"✅ {it['status_label']}"
+            if it['return_days_remaining'] < 0:
+                status_badge = f"❌ **Window Closed**"
+            
+            lines.append(
+                f"• **{it['name']}** ({it['store']})\n"
+                f"  - **Return Deadline**: **{it['return_deadline']}** ({it['return_days_remaining']} days remaining)\n"
+                f"  - **Status**: {status_badge}\n"
+                f"  - **Applicable Rule**: {it['policy_rule']}\n"
+            )
+        lines.append("_Calculated deterministically using store return policies without LLM arithmetic._")
+        return {"answer": "\n".join(lines), "sources": sources, "grounded": True}
 
-    # Deterministic Grounded Synthesis Fallback
-    fallback_lines = []
+    # B. Warranty questions
+    if any(k in q_lower for k in ["warranty", "guarantee", "defect", "repair", "service center"]):
+        lines = ["### 🛡️ Active Hardware & Manufacturer Warranties:\n"]
+        warr_count = 0
+        for it in receipt_items_context:
+            if it.get("warranty_deadline") and it["warranty_days_remaining"] > 0:
+                warr_count += 1
+                lines.append(
+                    f"• **{it['name']}** ({it['store']})\n"
+                    f"  - **Warranty Coverage Until**: **{it['warranty_deadline']}** ({it['warranty_days_remaining']} days remaining)\n"
+                    f"  - **Policy Reference**: {it['policy_rule']}\n"
+                )
+            else:
+                lines.append(f"• **{it['name']}**: No manufacturer warranty printed on receipt.")
+        if warr_count == 0:
+            lines.append("\n_No active extended hardware warranties found for the queried items._")
+        return {"answer": "\n".join(lines), "sources": sources, "grounded": True}
 
-    if "return" in q_lower or "deadline" in q_lower or "window" in q_lower or "when" in q_lower:
-        if receipt_items_context:
-            fallback_lines.append("Based on your uploaded receipt and verified store policy:")
-            for item_str in receipt_items_context:
-                fallback_lines.append(f"• {item_str.replace(chr(10), ' | ')}")
-        else:
-            fallback_lines.append("I couldn't find specific return deadline details for that item in your saved documents.")
+    # C. Purchase history / Items / Spend totals
+    if any(k in q_lower for k in ["buy", "bought", "item", "purchase", "spent", "spend", "cost", "how much", "total", "invoice"]):
+        total_spend = sum(it["price"] for it in receipt_items_context)
+        lines = [f"### 🧾 Verified Purchases & Item Breakdown (Total: ₹{total_spend:,.2f}):\n"]
+        for it in receipt_items_context:
+            lines.append(
+                f"• **{it['name']}** — **₹{it['price']:,.2f}**\n"
+                f"  - Store: {it['store']} | Purchased: {it['purchase_date']}\n"
+                f"  - Invoice: `{it['invoice_number'] or 'N/A'}`\n"
+            )
+        return {"answer": "\n".join(lines), "sources": sources, "grounded": True}
 
-    elif "warranty" in q_lower:
-        has_warranty = any("warranty" in c.lower() for c in receipt_items_context) or any("warranty" in p.lower() for p in context_chunks)
-        if not has_warranty:
-            fallback_lines.append("Warranty information was not found in your uploaded documents.")
-        else:
-            fallback_lines.append("Warranty details from your verified documents:")
-            for item_str in receipt_items_context:
-                if "warranty" in item_str.lower():
-                    fallback_lines.append(f"• {item_str.replace(chr(10), ' | ')}")
-
-    elif "invoice" in q_lower or "bill" in q_lower or "order" in q_lower:
-        fallback_lines.append("Here is the purchase record from your saved receipts:")
-        for item_str in receipt_items_context:
-            fallback_lines.append(f"• {item_str.replace(chr(10), ' | ')}")
-
-    elif "buy" in q_lower or "what did i" in q_lower or "items" in q_lower or "pay" in q_lower or "much" in q_lower:
-        fallback_lines.append("Here are the items and totals from your saved receipts:")
-        for item_str in receipt_items_context:
-            fallback_lines.append(f"• {item_str.replace(chr(10), ' | ')}")
-
-    else:
-        fallback_lines.append("Here is the relevant factual context from your saved receipts and store policies:")
-        for item_str in receipt_items_context:
-            fallback_lines.append(f"• {item_str.replace(chr(10), ' | ')}")
-
-    return {
-        "answer": "\n".join(fallback_lines),
-        "sources": sources,
-        "grounded": True
-    }
+    # D. Default comprehensive purchase & policy summary
+    lines = ["### 📋 Protection Summary for Your Saved Purchases:\n"]
+    for it in receipt_items_context:
+        lines.append(
+            f"• **{it['name']}** ({it['store']}): ₹{it['price']:,.2f}\n"
+            f"  - Return Deadline: **{it['return_deadline']}** ({it['return_days_remaining']} days left)\n"
+            f"  - Rule: {it['policy_rule']}\n"
+        )
+    return {"answer": "\n".join(lines), "sources": sources, "grounded": True}

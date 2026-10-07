@@ -267,26 +267,29 @@ function BrandGlyph({ id }: { id: string }) {
 export const Minimal3DMotionField: React.FC = () => {
   const [hoveredCardId, setHoveredCardId] = useState<string | null>(null);
 
-  // Distribute items into 6 dense columns
+  // Distribute items into dense columns spanning seamlessly from the leftmost edge
   const col1: CardItem[] = [ALL_REVIEWS[0], BRAND_CARDS[0], ALL_REVIEWS[3], ALL_REVIEWS[6], BRAND_CARDS[3]];
   const col2: CardItem[] = [ALL_REVIEWS[1], BRAND_CARDS[1], ALL_REVIEWS[4], ALL_REVIEWS[7], BRAND_CARDS[4]];
   const col3: CardItem[] = [ALL_REVIEWS[2], BRAND_CARDS[2], ALL_REVIEWS[5], ALL_REVIEWS[8], BRAND_CARDS[5]];
   const col4: CardItem[] = [ALL_REVIEWS[9], BRAND_CARDS[6], ALL_REVIEWS[10], ALL_REVIEWS[0], BRAND_CARDS[7]];
   const col5: CardItem[] = [ALL_REVIEWS[11], BRAND_CARDS[8], ALL_REVIEWS[1], ALL_REVIEWS[4], BRAND_CARDS[9]];
-  const col6: CardItem[] = [ALL_REVIEWS[2], BRAND_CARDS[5], ALL_REVIEWS[6], ALL_REVIEWS[8], BRAND_CARDS[1]];
+  const col6: CardItem[] = [ALL_REVIEWS[3], BRAND_CARDS[5], ALL_REVIEWS[6], ALL_REVIEWS[8], BRAND_CARDS[1]];
+  const col7: CardItem[] = [ALL_REVIEWS[7], BRAND_CARDS[2], ALL_REVIEWS[10], ALL_REVIEWS[2], BRAND_CARDS[0]];
+  const col8: CardItem[] = [ALL_REVIEWS[5], BRAND_CARDS[7], ALL_REVIEWS[9], ALL_REVIEWS[11], BRAND_CARDS[4]];
+  const col9: CardItem[] = [ALL_REVIEWS[8], BRAND_CARDS[9], ALL_REVIEWS[0], ALL_REVIEWS[4], BRAND_CARDS[6]];
 
   const columns = [
     {
       items: [...col1, ...col1],
       animationClass: 'animate-marquee-up',
       duration: '38s',
-      responsiveClass: 'hidden 2xl:flex',
+      responsiveClass: 'flex',
     },
     {
       items: [...col2, ...col2],
       animationClass: 'animate-marquee-down',
       duration: '44s',
-      responsiveClass: 'hidden xl:flex',
+      responsiveClass: 'flex',
     },
     {
       items: [...col3, ...col3],
@@ -304,12 +307,30 @@ export const Minimal3DMotionField: React.FC = () => {
       items: [...col5, ...col5],
       animationClass: 'animate-marquee-up',
       duration: '39s',
-      responsiveClass: 'hidden md:flex',
+      responsiveClass: 'flex',
     },
     {
       items: [...col6, ...col6],
       animationClass: 'animate-marquee-down',
       duration: '46s',
+      responsiveClass: 'flex',
+    },
+    {
+      items: [...col7, ...col7],
+      animationClass: 'animate-marquee-up',
+      duration: '40s',
+      responsiveClass: 'hidden sm:flex',
+    },
+    {
+      items: [...col8, ...col8],
+      animationClass: 'animate-marquee-down',
+      duration: '45s',
+      responsiveClass: 'hidden md:flex',
+    },
+    {
+      items: [...col9, ...col9],
+      animationClass: 'animate-marquee-up',
+      duration: '37s',
       responsiveClass: 'hidden lg:flex',
     },
   ];
@@ -321,28 +342,29 @@ export const Minimal3DMotionField: React.FC = () => {
     >
       {/* 
         =======================================================================
-        3D PERSPECTIVE VIEWPORT (Matches exact recording screenshot tilt)
+        3D PERSPECTIVE VIEWPORT (Starts from leftmost end and spans across)
         perspective: 1200px
-        rotateX(24deg) rotateY(-12deg) rotateZ(18deg)
+        rotateX(22deg) rotateY(-12deg) rotateZ(18deg)
         =======================================================================
       */}
       <div
-        className="w-full h-full flex justify-center items-center preserve-3d"
+        className="w-full h-full flex justify-start items-center preserve-3d"
         style={{
           perspective: '1200px',
         }}
       >
         <div
-          className="w-[135%] sm:w-[125%] max-w-[1900px] flex justify-center gap-4 sm:gap-5 preserve-3d transition-transform duration-700 ease-out"
+          className="w-max flex justify-start gap-4 sm:gap-5 preserve-3d transition-transform duration-700 ease-out"
           style={{
             transform: 'rotateX(22deg) rotateY(-12deg) rotateZ(18deg) scale(1.12)',
+            transformOrigin: 'left center',
             transformStyle: 'preserve-3d',
           }}
         >
           {columns.map((col, colIdx) => (
             <div
               key={`motion-col-${colIdx}`}
-              className={`flex-1 min-w-[210px] max-w-[250px] flex-col preserve-3d ${col.responsiveClass} pointer-events-auto`}
+              className={`flex-shrink-0 w-[215px] sm:w-[245px] flex-col preserve-3d ${col.responsiveClass} pointer-events-auto`}
               style={{
                 transformStyle: 'preserve-3d',
               }}

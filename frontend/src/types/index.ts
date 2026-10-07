@@ -325,3 +325,50 @@ export interface FullReceiptDetails {
   calculations: CalculationResult[];
 }
 
+export interface UserProfile {
+  shopperId: string;
+  name: string;
+  email: string;
+  role: string;
+  avatarInitial: string;
+  avatarBg: string;
+  isDemo: boolean;
+  tier: 'Protected Premium' | 'Verified Shopper' | 'Business Enterprise';
+  description: string;
+}
+
+export const DEMO_USERS: UserProfile[] = [
+  {
+    shopperId: 'demo-shopper-001',
+    name: 'Raj Soni',
+    email: 'raj.soni@example.com',
+    role: 'Principal Buyer',
+    avatarInitial: 'RS',
+    avatarBg: 'bg-indigo-600',
+    isDemo: true,
+    tier: 'Protected Premium',
+    description: 'Pre-seeded vault: Amazon Kreo Keyboard, Caffix Cafe bill, Mangalam Designer invoice.',
+  },
+  {
+    shopperId: 'demo-shopper-002',
+    name: 'Ananya Sharma',
+    email: 'ananya.sharma@example.com',
+    role: 'Business Executive',
+    avatarInitial: 'AS',
+    avatarBg: 'bg-purple-600',
+    isDemo: true,
+    tier: 'Business Enterprise',
+    description: 'Clean workspace session ready for custom receipt uploads and GST audits.',
+  },
+  {
+    shopperId: 'demo-shopper-003',
+    name: 'Marcus Vance',
+    email: 'marcus.v@example.com',
+    role: 'Hardware Analyst',
+    avatarInitial: 'MV',
+    avatarBg: 'bg-emerald-600',
+    isDemo: true,
+    tier: 'Verified Shopper',
+    description: 'Tech enthusiast profile evaluating extended warranty and peripheral returns.',
+  },
+];

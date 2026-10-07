@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Send, Bot, User, BookOpen, FileCheck, Database, Loader2 } from 'lucide-react';
 import type { ChatMessage } from '../types';
 import { sendChatMessage } from '../services/api';
@@ -6,9 +6,15 @@ import { sendChatMessage } from '../services/api';
 interface ChatPanelProps {
   shopperId: string;
   receiptId: string | null;
+  externalResponse?: {
+    question: string;
+    answer: string;
+    sources?: any[];
+    timestamp?: string;
+  } | null;
 }
 
-export const ChatPanel: React.FC<ChatPanelProps> = ({ shopperId, receiptId }) => {
+export const ChatPanel: React.FC<ChatPanelProps> = ({ shopperId, receiptId, externalResponse }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 'welcome',
@@ -19,6 +25,33 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ shopperId, receiptId }) =>
   ]);
   const [inputQuestion, setInputQuestion] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+
+  // Sync responses triggered from hero composer into chat history
+  useEffect(() => {
+    if (externalResponse && externalResponse.question && externalResponse.answer) {
+      setMessages((prev) => {
+        // Prevent duplicate append
+        if (prev.some((m) => m.text === externalResponse.answer)) return prev;
+        const nowTime = externalResponse.timestamp || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        return [
+          ...prev,
+          {
+            id: `ext-user-${Date.now()}`,
+            sender: 'user',
+            text: externalResponse.question,
+            timestamp: nowTime,
+          },
+          {
+            id: `ext-bot-${Date.now() + 1}`,
+            sender: 'assistant',
+            text: externalResponse.answer,
+            sources: externalResponse.sources,
+            timestamp: nowTime,
+          },
+        ];
+      });
+    }
+  }, [externalResponse]);
 
   const suggestedQuestions = [
     'When can I return this?',

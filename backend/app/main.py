@@ -46,8 +46,8 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 # CORS Configuration with Vercel and Render deployment support
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
-    allow_origin_regex=r"https://.*(\.vercel\.app|\.onrender\.com)",
+    allow_origins=[o for o in settings.CORS_ORIGINS if o != "*"],
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?|https://.*(\.vercel\.app|\.onrender\.com)",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
